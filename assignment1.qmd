@@ -1,6 +1,6 @@
 ---
 title: "Assignment 1"
-author: "Your Name"
+author: "Cornell Nwankwoala"
 format: html
 ---
 
@@ -15,7 +15,30 @@ format: html
 *Make sure to load the packages that you need and `glimpse()` the data or `View()` it to make sure that it downloaded properly.* 
 
 ```{r}
+library(vdemdata)
+library(dplyr)
 
+democracy <- vdem |>
+filter(year >= 2003) |>
+  select(
+    year,
+    country = country_name,
+    vdem_ctry_id = country_id,
+    dom_movement = v2cldmovew, #Freedom of Domestic Movement
+    justice= v2clacjstw, #Access to justice for Women
+    gdp_pc = e_gdppc, 
+    region = e_regionpol_6C
+  )|>
+  mutate(
+    region = case_match(region,
+                        1 ~ "Eastern Europe",
+                        2 ~ "Latin America",
+                        3 ~ "Middle East",
+                        4 ~ "Africa",
+                        5 ~ "The West",
+                        6 ~ "Asia")
+    )
+glimpse(democracy)                    
 ```
 
 ## Step 2: Download data from the World Bank
@@ -23,9 +46,31 @@ format: html
 *Next, download the variable on women's represenation that we used in Module 1.2 ("SG.GEN.PARL.ZS") and at least one additional measure related to women's empowerment. Go to the [WDI](https://databank.worldbank.org/source/world-development-indicators) site the wb_search() function to identify relevant variables. Download the most recent 20 years of data for your analysis.* 
 
 *Make sure that the indicator has enough data to conduct your analysis, i.e. that it has data for most countries and years.*
+devtools::install_github("nset-ornl/wbstats")
 
+flfp_indicators <- wb_search("female labor force")
 ```{r}
+library(wbstats)
+library(dplyr)
+library(janitor)
+library(tidyr)
+  
+women_ownership <- wb_search("firms with female participation in ownership")
+print(women_ownership)
 
+flfp_indicators <- wb_search("female labor force")
+print(flfp_indicators, n=20)
+
+indicators <- c("flfp" = "IC.FRM.FEMO.ZS", "women_ownership" = "SL.TLF.CACT.FM.NE.ZS")
+
+women_emp <- wb_data(indicators, mrv = 20) |>
+  select(!iso2c) |>
+  rename(year = date) |>
+mutate(
+  flfp = round_to_fraction(flfp, denominator = 100),
+  women_ownership = round_to_fraction(women_ownership, denominator = 100)
+)
+glimpse(women_emp)
 ```
 
 ## Step 3: Merge the data
@@ -33,15 +78,44 @@ format: html
 *Now add country codes using the `countrycode` package and merge the data using `left_join()`.* 
 
 ```{r}
+library(countrycode)
+library(readr)
+democracy <- democracy |>    
+  mutate(iso3c = countrycode(sourcevar = vdem_ctry_id, 
+        origin = "vdem",         
+        destination = "wb"))  |> 
+  relocate(iso3c, .after = vdem_ctry_id) 
 
+dem_women <- left_join(democracy, women_emp, by = c("iso3c", "year")) |>
+  rename(country = country.x)
+  
+write_csv(dem_women, "data/dem_women.csv")
+
+glimpse(dem_women)
 ```
 
 ## Step 4: Summarize your combined data set
 
 *Use `group_by()`, `summarize()` and `arrange()` to glean insights about your data. For example, how do regions compare on mean values of women's representation and how do these values relate to the values of other variables in your data set? Which countries stand out in terms of women's representation? Etc.* 
+```{r}
+dem_summary <- dem_women |> 
+  group_by(region)  |>
+  summarize(           
+    dom_movement  = mean(dom_movement, na.rm = TRUE),
+    gdp_pc = mean(gdp_pc, na.rm = TRUE), 
+    flfp = mean(flfp, na.rm = TRUE), 
+    women_ownership = mean(women_ownership, na.rm = TRUE)
+  ) |> 
+  arrange(desc(gdp_pc))
 
 
+write_csv(dem_summary, "data/dem_summary.csv")
+
+
+glimpse(dem_summary)
+View(dem_summary)
+```
 ## Step 5: Interpret your data
 
 *Write a paragraph or so relating your insights to the Norris reading about electoral reform and women's representation. Picking a handful of country cases from your data, how does your analysis relate to her arguments about the relevance of electoral systems, statutory quotas, reserved seats or voluntary quotas?* 
-
+Norris's research emphasizes the significant role of electoral system design, candidate selection methods, and gender quotas in promoting women's representation in politics. By analyzing my data, interesting patterns emerge across different regions. In the Middle East, despite a lower freedom of movement (-0.58), there is the second-highest GDP per capita (around 23.10). In the Western region, there is higher freedom of movement (around 2.06) and a higher GDP per capita (around 42.30). Eastern Europe ranks second in female ownership in firms and freedom of movement (around 1.50), although it has a lower GDP per capita compared to the Middle East. These findings underscore the complex relationship between economic indicators, freedom of movement, and women's representation in different regions, providing valuable insights for targeted strategies and policies to promote gender equality.
